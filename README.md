@@ -1,5 +1,8 @@
 # Stitch
 
+<img width="1254" height="1254" alt="image" src="https://github.com/user-attachments/assets/97ab5664-8386-440b-9db8-9c634de050bc" />
+
+
 Stitch is a Lumiverse extension for composing one definitive swipe from pieces of several existing swipes.
 
 ## Flow

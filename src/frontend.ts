@@ -357,17 +357,30 @@ const CSS = `
   line-height: 1.45;
   color: var(--lumiverse-text);
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  display: block;
+  max-height: 4.35em;
 }
-.stitch-piece-preview.is-expanded { display: block; white-space: pre-wrap; }
-.stitch-preview-frame { width: 100%; height: 55vh; border: 0; background: white; }
+.stitch-piece-preview.is-truncated {
+  mask-image: linear-gradient(to bottom, black 45%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black 45%, transparent);
+}
+.stitch-piece-preview.is-expanded { max-height: none; white-space: pre-wrap; }
+.stitch-button.stitch-read-more {
+  min-height: 24px;
+  margin-top: 5px;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--lumiverse-text-dim);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--lumiverse-border) 65%, transparent);
+  border-radius: 6px;
+}
+.stitch-button.stitch-read-more:focus-visible { outline: 2px solid var(--lumiverse-accent); outline-offset: 2px; }
+.stitch-preview-frame { width: 100%; height: 55vh; border: 0; background: var(--lumiverse-bg-opaque, var(--lumiverse-bg, Canvas)); }
 .stitch-preview-source { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow: auto; }
 .stitch-island-row { display: flex; align-items: center; gap: 8px; }
 .stitch-island-row > .stitch-source-island { flex: 1; min-width: 0; text-align: left; color: inherit; font: inherit; }
-.stitch-source-block-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: start; }
-.stitch-source-block-row > .stitch-button { margin-top: 9px; }
 .stitch-step-label { position: relative; z-index: 1; background: var(--lumiverse-bg, var(--lumiverse-fill-heavy)); }
 .stitch-piece-actions { gap: 4px; flex-wrap: wrap; }
 .stitch-editor {
@@ -430,7 +443,6 @@ const CSS = `
   .stitch-source-actions .stitch-button { flex: 1 1 auto; }
   .stitch-piece { grid-template-columns: 24px minmax(0, 1fr); }
   .stitch-piece-actions { grid-column: 2; justify-content: flex-end; }
-  .stitch-piece-actions > .stitch-button:not(.is-icon) { flex: 1 0 100%; }
   .stitch-footer { align-items: flex-end; }
 }
 `
@@ -794,16 +806,52 @@ export function setup(ctx: FrontendContext) {
       parsed.querySelectorAll('script, meta, base, link, iframe, frame, object, embed').forEach((node) => node.remove())
       parsed.querySelectorAll('a, area').forEach((node) => { node.removeAttribute('href'); node.removeAttribute('xlink:href') })
       parsed.querySelectorAll('input, button, select, textarea').forEach((node) => node.setAttribute('disabled', ''))
-      const previewHtml = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font:14px/1.6 system-ui;padding:16px;overflow-wrap:anywhere;white-space:pre-wrap}img{max-width:100%}</style>${parsed.head.innerHTML}</head><body>${parsed.body.innerHTML}</body></html>`
-      const sandbox = ctx.dom.createSandboxFrame({ html: previewHtml, autoResize: false })
-      const frame = sandbox.element as HTMLIFrameElement
-      frame.classList.add('stitch-preview-frame')
-      frame.style.height = '55vh'
-      frame.style.background = 'white'
-      frame.title = `${label} HTML preview`
-      // This visualizer is intentionally static, including the host bootstrap.
-      frame.setAttribute('sandbox', '')
-      frame.referrerPolicy = 'no-referrer'
+      const themeProbe = el('span')
+      themeProbe.hidden = true
+      themeProbe.style.backgroundColor = 'var(--lumiverse-bg-opaque, var(--lumiverse-bg, Canvas))'
+      themeProbe.style.color = 'var(--lumiverse-text, CanvasText)'
+      previewModal.root.appendChild(themeProbe)
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
+      const theme = () => {
+        const hostScheme = getComputedStyle(previewModal.root).colorScheme
+        themeProbe.style.colorScheme = hostScheme === 'normal' ? 'light dark' : hostScheme
+        const colors = getComputedStyle(themeProbe)
+        return { background: colors.backgroundColor, foreground: colors.color, scheme: hostScheme === 'normal' ? (systemTheme.matches ? 'dark' : 'light') : hostScheme }
+      }
+      const previewHtml = (colors: ReturnType<typeof theme>) => `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'"><meta name="viewport" content="width=device-width, initial-scale=1"><style>:root{color-scheme:${colors.scheme}}html,body{background-color:${colors.background}!important;color:${colors.foreground}}body{font:14px/1.6 system-ui;padding:16px;overflow-wrap:anywhere;white-space:pre-wrap}img{max-width:100%}</style>${parsed.head.innerHTML}</head><body>${parsed.body.innerHTML}</body></html>`
+      let previewTheme = theme()
+      const createPreviewSandbox = (colors: ReturnType<typeof theme>) => {
+        const handle = ctx.dom.createSandboxFrame({ html: previewHtml(colors), autoResize: false })
+        const element = handle.element as HTMLIFrameElement
+        element.classList.add('stitch-preview-frame')
+        element.style.height = '55vh'
+        element.style.background = colors.background
+        element.title = `${label} HTML preview`
+        // This visualizer is intentionally static, including the host bootstrap.
+        element.setAttribute('sandbox', '')
+        element.referrerPolicy = 'no-referrer'
+        return handle
+      }
+      let sandbox = createPreviewSandbox(previewTheme)
+      let frame = sandbox.element as HTMLIFrameElement
+      const refreshTheme = () => {
+        const next = theme()
+        if (JSON.stringify(next) === JSON.stringify(previewTheme)) return
+        previewTheme = next
+        // Replacing the static frame avoids overlapping srcdoc navigations
+        // painting stale theme colors in WebKit during rapid theme changes.
+        const replacement = createPreviewSandbox(next)
+        frame.replaceWith(replacement.element)
+        sandbox.destroy()
+        sandbox = replacement
+        frame = replacement.element
+      }
+      const themeObserver = new MutationObserver(refreshTheme)
+      for (let ancestor: HTMLElement | null = previewModal.root; ancestor; ancestor = ancestor.parentElement) {
+        themeObserver.observe(ancestor, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] })
+      }
+      themeObserver.observe(document.head, { subtree: true, childList: true, characterData: true, attributes: true })
+      systemTheme.addEventListener('change', refreshTheme)
       const details = el('details')
       const summary = el('summary')
       summary.textContent = 'Exact source'
@@ -814,6 +862,8 @@ export function setup(ctx: FrontendContext) {
       close.addEventListener('click', () => previewModal.dismiss())
       previewModal.root.append(explanation, frame, details, close)
       previewModal.onDismiss(() => {
+        themeObserver.disconnect()
+        systemTheme.removeEventListener('change', refreshTheme)
         sandbox.destroy()
         if (childModal === previewModal) childModal = null
         if (opener?.isConnected) opener.focus()
@@ -930,11 +980,7 @@ export function setup(ctx: FrontendContext) {
             event.preventDefault()
             toggleParagraph()
           })
-          const row = el('div', 'stitch-source-block-row')
-          const view = iconButton(`Preview paragraph ${blockIndex + 1} from Swipe ${session.currentSwipe + 1}`, eyeIcon())
-          view.addEventListener('click', () => previewPiece(raw.slice(block.start, block.end), `Paragraph ${blockIndex + 1}`, false, view))
-          row.append(paragraph, view)
-          source.appendChild(row)
+          source.appendChild(paragraph)
           continue
         }
 
@@ -1090,6 +1136,11 @@ export function setup(ctx: FrontendContext) {
       head.appendChild(count)
 
       const list = el('div', 'stitch-arrange-list')
+      const previewObserver = new ResizeObserver((entries) => {
+        for (const { target } of entries) {
+          target.classList.toggle('is-truncated', !target.classList.contains('is-expanded') && target.scrollHeight > target.clientHeight + 1)
+        }
+      })
       list.setAttribute('role', 'list')
       list.setAttribute('aria-label', 'Arranged pieces')
       let touchDrag: { id: string; pointerId: number; y: number; target: HTMLElement | null } | null = null
@@ -1122,7 +1173,7 @@ export function setup(ctx: FrontendContext) {
         cancelAnimationFrame(scrollFrame)
         list.querySelectorAll('.is-dragging, .is-drop-target').forEach((node) => node.classList.remove('is-dragging', 'is-drop-target'))
       }
-      disposeStage = clearTouchDrag
+      disposeStage = () => { clearTouchDrag(); previewObserver.disconnect() }
       const movePiece = (from: number, to: number) => {
         const id = session.fragments[from]?.id
         const scrollTop = list.scrollTop
@@ -1178,21 +1229,24 @@ export function setup(ctx: FrontendContext) {
             ? `${fragment.sourceLabel || 'Resolved'} island (source preserved exactly)`
             : fragment.text
         preview.textContent = expandedPieces.has(fragment.id) ? fragment.text : collapsedText
+        previewObserver.observe(preview)
         copy.append(meta, preview)
 
         const actions = el('div', 'stitch-piece-actions')
-        const expand = textButton(expandedPieces.has(fragment.id) ? 'Show less' : 'Read piece')
-        expand.setAttribute('aria-label', `${expandedPieces.has(fragment.id) ? 'Collapse' : 'Read'} piece ${index + 1}`)
+        const expand = textButton(expandedPieces.has(fragment.id) ? 'Show less' : 'Read more')
+        expand.classList.add('stitch-read-more')
+        expand.setAttribute('aria-label', `${expandedPieces.has(fragment.id) ? 'Show less of' : 'Read more of'} piece ${index + 1}`)
         expand.setAttribute('aria-expanded', String(expandedPieces.has(fragment.id)))
         expand.setAttribute('aria-controls', preview.id)
         expand.addEventListener('click', () => {
           if (expandedPieces.has(fragment.id)) expandedPieces.delete(fragment.id)
           else expandedPieces.add(fragment.id)
           preview.classList.toggle('is-expanded', expandedPieces.has(fragment.id))
+          if (expandedPieces.has(fragment.id)) preview.classList.remove('is-truncated')
           preview.textContent = expandedPieces.has(fragment.id) ? fragment.text : collapsedText
-          expand.textContent = expandedPieces.has(fragment.id) ? 'Show less' : 'Read piece'
+          expand.textContent = expandedPieces.has(fragment.id) ? 'Show less' : 'Read more'
           expand.setAttribute('aria-expanded', String(expandedPieces.has(fragment.id)))
-          expand.setAttribute('aria-label', `${expandedPieces.has(fragment.id) ? 'Collapse' : 'Read'} piece ${index + 1}`)
+          expand.setAttribute('aria-label', `${expandedPieces.has(fragment.id) ? 'Show less of' : 'Read more of'} piece ${index + 1}`)
         })
         const view = iconButton(`Preview piece ${index + 1}`, eyeIcon())
         view.addEventListener('click', () => previewPiece(fragment.text, `Piece ${index + 1}`, fragment.sourceKind === 'resolved-island', view))
@@ -1212,8 +1266,8 @@ export function setup(ctx: FrontendContext) {
           if (session.fragments.length === 0) session.step = 0
           render()
         })
-        actions.append(expand)
-        actions.append(view)
+        copy.appendChild(expand)
+        if (fragment.sourceKind === 'html-island' || fragment.sourceKind === 'resolved-island') actions.append(view)
         actions.append(up, down, remove)
 
         card.addEventListener('dragstart', (event) => {

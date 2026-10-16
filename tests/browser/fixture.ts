@@ -2,7 +2,7 @@ import { setup } from '../../src/frontend'
 
 // Controlled Spindle boundaries: no live accounts, chats, settings or saves.
 const swipes = [
-  'Alpha paragraph with a smaller slice and Unicode 🌙. '.repeat(6) + '\n\nBravo paragraph.\n\nCharlie paragraph.\n\n<div><style>h2{color:purple}</style><h2>Island preview</h2><script>parent.postMessage("unsafe", "*")</script></div>\n\n<!-- CARD_START -->{"mode":"card"}<!-- CARD_END -->',
+  'Alpha paragraph with a smaller slice and Unicode 🌙. '.repeat(6) + '\n\nBravo paragraph.\n\n' + 'Charlie paragraph. '.repeat(35) + '\n\n<div><style>h2{color:purple}</style><h2>Island preview</h2><script>parent.postMessage("unsafe", "*")</script></div>\n\n<!-- CARD_START -->{"mode":"card"}<!-- CARD_END -->',
   'Second swipe paragraph.',
 ]
 let receive: (payload: any) => void = () => {}
@@ -52,7 +52,7 @@ const ctx = {
       const element = document.createElement('iframe')
       element.setAttribute('sandbox', 'allow-scripts')
       element.srcdoc = options.html
-      return { element, destroy() { element.remove() } }
+      return { element, setContent(html: string) { element.srcdoc = html }, destroy() { element.remove() } }
     },
     addStyle(css: string) {
       const style = document.createElement('style')

@@ -17,6 +17,16 @@ const server = createServer((request, response) => {
 })
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
 const url = `http://127.0.0.1:${server.address().port}`
+async function expectFrameColor(locator, property, expected) {
+  let actual
+  // srcdoc changes before the child document finishes navigating in WebKit.
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try { actual = await locator.evaluate((element, key) => getComputedStyle(element)[key], property) } catch { actual = undefined }
+    if (actual === expected) return
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+  assert.equal(actual, expected, `Preview ${property} follows the theme`)
+}
 if (process.argv.includes('--serve')) {
   console.log(`Stitch fixture: ${url}`)
   await new Promise(() => {})
@@ -34,6 +44,7 @@ try {
         await page.getByRole('button', { name: 'Stitch swipes', exact: true }).click()
         const source = page.getByRole('region', { name: 'Swipe 1 selectable source' })
         const paragraphs = source.locator('p')
+        assert.equal(await source.getByRole('button', { name: /^Preview paragraph/ }).count(), 0, 'Prose has no eye buttons')
         assert.equal(await paragraphs.first().evaluate(e => getComputedStyle(e).userSelect || getComputedStyle(e).webkitUserSelect), 'text')
         // Browser Range + selectionchange tests source mapping and toolbar focus;
         // real mouse selection below also catches inherited user-select rules.
@@ -49,11 +60,41 @@ try {
         await page.getByRole('button', { name: 'Add selection', exact: true }).click()
         assert.equal(await source.locator('mark').innerText(), 'paragraph')
         await source.getByRole('button', { name: 'Bravo paragraph.', exact: true }).press('Enter')
-        await source.getByRole('button', { name: 'Charlie paragraph.', exact: true }).click()
+        await source.getByRole('button', { name: /^Charlie paragraph\./ }).click()
         await page.getByRole('button', { name: 'Preview HTML island 4 from Swipe 1', exact: true }).click()
         assert.equal(await page.locator('iframe').getAttribute('sandbox'), '')
         assert.ok((await page.locator('iframe').getAttribute('srcdoc')).includes("default-src 'none'"))
         await page.frameLocator('iframe').getByRole('heading', { name: 'Island preview' }).waitFor()
+        const previewBody = page.frameLocator('iframe').locator('body')
+        assert.equal(await previewBody.evaluate(e => getComputedStyle(e).backgroundColor), 'rgb(25, 24, 31)', 'Preview starts in host dark theme')
+        await page.evaluate(() => {
+          document.documentElement.style.setProperty('--lumiverse-bg', '#f5f4f0')
+          document.documentElement.style.setProperty('--lumiverse-text', '#202020')
+        })
+        await page.waitForFunction(() => document.querySelector('iframe').srcdoc.includes('rgb(245, 244, 240)'))
+        await previewBody.waitFor()
+        await expectFrameColor(previewBody, 'backgroundColor', 'rgb(245, 244, 240)')
+        await expectFrameColor(previewBody, 'color', 'rgb(32, 32, 32)')
+        await page.screenshot({ path: fileURLToPath(new URL(`../test-results/${name}-${width}-preview-light.png`, import.meta.url)) })
+        if (width === 1280) {
+          await page.evaluate(() => {
+            document.documentElement.style.setProperty('--lumiverse-bg', 'Canvas')
+            document.documentElement.style.setProperty('--lumiverse-text', 'CanvasText')
+          })
+          await page.emulateMedia({ colorScheme: 'dark' })
+          await page.waitForFunction(() => document.querySelector('iframe').srcdoc.includes('color-scheme:dark'))
+          const darkCanvas = await page.locator('iframe').evaluate(e => e.style.backgroundColor)
+          await page.emulateMedia({ colorScheme: 'light' })
+          await page.waitForFunction(() => document.querySelector('iframe').srcdoc.includes('color-scheme:light'))
+          assert.notEqual(await page.locator('iframe').evaluate(e => e.style.backgroundColor), darkCanvas, 'System color scheme updates fallback canvas')
+        }
+        await page.evaluate(() => {
+          document.documentElement.style.removeProperty('--lumiverse-bg')
+          document.documentElement.style.removeProperty('--lumiverse-text')
+        })
+        await page.waitForFunction(() => document.querySelector('iframe').srcdoc.includes('rgb(25, 24, 31)'))
+        await expectFrameColor(previewBody, 'backgroundColor', 'rgb(25, 24, 31)')
+        await page.screenshot({ path: fileURLToPath(new URL(`../test-results/${name}-${width}-preview-dark.png`, import.meta.url)) })
         await page.getByRole('button', { name: 'Close preview', exact: true }).click()
         assert.equal(await page.getByRole('button', { name: 'Preview HTML island 4 from Swipe 1', exact: true }).evaluate(e => e === document.activeElement), true)
         await page.getByRole('button', { name: 'Preview CARD island 5 from Swipe 1', exact: true }).click()
@@ -66,8 +107,17 @@ try {
           assert.ok((await page.getByRole('button', { name: 'Close Stitch' }).boundingBox()).y >= 47, 'Close stays below notch safe top')
         }
         await page.getByRole('button', { name: 'Arrange pieces', exact: true }).click()
-        await page.getByRole('button', { name: 'Read piece 1', exact: true }).click()
-        assert.equal(await page.getByRole('button', { name: 'Collapse piece 1', exact: true }).getAttribute('aria-expanded'), 'true')
+        assert.equal(await page.getByRole('button', { name: /^Preview piece/ }).count(), 0, 'Arranged prose has no eye buttons')
+        await page.locator('.stitch-piece-preview').nth(2).evaluate(e => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+        assert.equal(await page.locator('.stitch-piece-preview').nth(2).evaluate(e => e.classList.contains('is-truncated')), true)
+        assert.equal(await page.locator('.stitch-piece-preview').nth(2).evaluate(e => getComputedStyle(e).maskImage || getComputedStyle(e).webkitMaskImage).then(mask => mask.includes('linear-gradient')), true)
+        await page.getByRole('button', { name: 'Read more of piece 3', exact: true }).press('Enter')
+        assert.equal(await page.locator('.stitch-piece-preview').nth(2).evaluate(e => e.scrollHeight <= e.clientHeight + 1), true)
+        await page.getByRole('button', { name: 'Show less of piece 3', exact: true }).press('Enter')
+        const readButton = await page.getByRole('button', { name: 'Read more of piece 1', exact: true }).boundingBox()
+        assert.ok(readButton.width < 100 && readButton.height < 30, 'Read more remains a compact button')
+        await page.getByRole('button', { name: 'Read more of piece 1', exact: true }).click()
+        assert.equal(await page.getByRole('button', { name: 'Show less of piece 1', exact: true }).getAttribute('aria-expanded'), 'true')
         await page.getByRole('button', { name: 'Move piece 1 down', exact: true }).click()
         assert.equal(await page.locator('.stitch-piece-preview').first().innerText(), 'Bravo paragraph.')
         await page.getByRole('button', { name: 'Reorder piece 2; use arrow keys to move', exact: true }).press('ArrowUp')
@@ -118,6 +168,11 @@ try {
         assert.equal(await page.locator('.stitch-thread-empty').count(), 1, 'Selection does not toggle a paragraph')
         await page.getByRole('button', { name: 'Add selection', exact: true }).click()
         assert.equal(await page.locator('.stitch-chip').count(), 1)
+        await page.getByRole('region', { name: 'Swipe 1 selectable source' }).getByRole('button', { name: 'HTML island Island preview', exact: true }).click()
+        await page.getByRole('button', { name: 'Arrange pieces', exact: true }).click()
+        assert.equal(await page.getByRole('button', { name: /^Preview piece/ }).count(), 1, 'Only the arranged island has an eye button')
+        await page.getByRole('button', { name: 'Preview piece 2', exact: true }).click()
+        await page.frameLocator('iframe').getByRole('heading', { name: 'Island preview' }).waitFor()
         await page.evaluate(() => window.fixture.unload())
         assert.equal(await page.getByRole('dialog').count(), 0)
         assert.equal(await page.evaluate(() => window.fixture.requests.some(r => r.type === 'stitch_save')), false)

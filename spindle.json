@@ -1,10 +1,10 @@
 {
-  "version": "0.1.4",
+  "version": "0.1.5",
   "name": "Stitch",
   "identifier": "stitch",
   "author": "Stitch Contributors",
-  "github": "https://github.com/",
-  "homepage": "https://github.com/",
+  "github": "https://github.com/kittyafterdark/Stitch",
+  "homepage": "https://github.com/kittyafterdark/Stitch",
   "description": "Select the best pieces from multiple swipes, arrange them, edit the result, and save it as a new native swipe.",
   "permissions": ["chat_mutation"],
   "entry_backend": "dist/backend.js",

@@ -1,0 +1,13 @@
+{
+  "version": "0.1.4",
+  "name": "Stitch",
+  "identifier": "stitch",
+  "author": "Stitch Contributors",
+  "github": "https://github.com/",
+  "homepage": "https://github.com/",
+  "description": "Select the best pieces from multiple swipes, arrange them, edit the result, and save it as a new native swipe.",
+  "permissions": ["chat_mutation"],
+  "entry_backend": "dist/backend.js",
+  "entry_frontend": "dist/frontend.js",
+  "minimum_lumiverse_version": "1.2.5"
+}

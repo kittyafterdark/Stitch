@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stitch controlled browser fixture</title>
+<style>
+:root { --lumiverse-text:#eee; --lumiverse-text-dim:#aaa; --lumiverse-border:#444; --lumiverse-fill-heavy:#24232a; --lumiverse-fill-subtle:#33313a; --lumiverse-accent:#bea1ef; --lumiverse-bg:#19181f; --app-interactive-safe-top:0px; --app-interactive-viewport-height:100dvh; }
+* { box-sizing:border-box }
+body { margin:0; background:#19181f; color:#eee; font:14px system-ui }
+button, [role="button"] { user-select:none }
+.fixture-backdrop { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:#0008; padding:12px }
+.fixture-modal { width:100%; max-width:1100px; background:#19181f; border:1px solid #444; border-radius:16px; overflow:hidden; display:flex; flex-direction:column }
+.fixture-modal > header { padding:16px 20px; display:flex; justify-content:space-between; align-items:center }
+.fixture-body { min-height:0; overflow:auto; padding:16px 20px }
+@media(max-width:680px) { :root { --app-interactive-safe-top:47px; --app-interactive-viewport-height:calc(100dvh - 47px); } .fixture-body{padding:12px} }
+</style></head><body><div id="mount"></div><script type="module" src="/fixture.js"></script></body></html>

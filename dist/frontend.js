@@ -608,11 +608,14 @@ var CSS = `
 }
 .stitch-button.stitch-read-more:focus-visible { outline: 2px solid var(--lumiverse-accent); outline-offset: 2px; }
 .stitch-preview-frame { width: 100%; height: 55vh; border: 0; background: var(--lumiverse-bg-opaque, var(--lumiverse-bg, Canvas)); }
+.stitch-preview-native { height: 55vh; overflow: auto; padding: 12px; overflow-wrap: anywhere; }
 .stitch-preview-source { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow: auto; }
 .stitch-island-row { display: flex; align-items: center; gap: 8px; }
 .stitch-island-row > .stitch-source-island { flex: 1; min-width: 0; text-align: left; color: inherit; font: inherit; }
 .stitch-step-label { position: relative; z-index: 1; background: var(--lumiverse-bg, var(--lumiverse-fill-heavy)); }
 .stitch-piece-actions { gap: 4px; flex-wrap: wrap; }
+.stitch-arrange-tools { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex: 0 0 auto; }
+.stitch-arrange-tools .stitch-read-more { margin-top: 0; }
 .stitch-editor {
   min-height: 0;
   flex: 1 1 420px;
@@ -976,7 +979,7 @@ function setup(ctx) {
       });
       return stepper;
     };
-    const previewPiece = (raw, label, resolved, opener) => {
+    const previewPiece = (raw, label, resolved, opener, sourceRef) => {
       childModal?.dismiss();
       const previewModal = ctx.ui.showModal({ title: `Preview: ${label}`, width: 900, maxHeight: 1e5 });
       childModal = previewModal;
@@ -988,7 +991,41 @@ function setup(ctx) {
         container.parentElement.style.height = "auto";
       }
       const explanation = el("p", "stitch-source-hint");
-      explanation.textContent = resolved ? "Stored source preview. Lumiverse does not expose a public API for replaying display resolvers here; resolved output may differ from the chat." : "HTML preview. Scripts, external resources, and chat actions are disabled.";
+      explanation.textContent = resolved ? "Stored source preview. Rendered display previews are unavailable on this host; output may differ from the chat." : "HTML preview. Scripts, external resources, and chat actions are disabled.";
+      const details = el("details");
+      const summary = el("summary");
+      summary.textContent = "Exact source";
+      const source = el("pre", "stitch-preview-source");
+      source.textContent = raw;
+      details.append(summary, source);
+      const close = textButton("Close preview");
+      close.addEventListener("click", () => previewModal.dismiss());
+      const nativeSupported = typeof ctx.components?.mountHostSurface === "function" && ctx.components.listHostSurfaces?.().some((surface) => surface.id === "message_preview");
+      if (nativeSupported) {
+        const nativeView = el("div", "stitch-preview-native");
+        nativeView.setAttribute("role", "region");
+        nativeView.setAttribute("aria-label", `${label} display preview`);
+        previewModal.root.append(explanation, nativeView, details, close);
+        try {
+          const handle = ctx.components.mountHostSurface(nativeView, "message_preview", {
+            chatId: session.chatId,
+            messageId: session.messageId,
+            ...sourceRef
+          });
+          explanation.textContent = "Read-only preview using the current message source and display settings.";
+          previewModal.onDismiss(() => {
+            handle.destroy();
+            if (childModal === previewModal)
+              childModal = null;
+            if (opener.isConnected)
+              opener.focus();
+          });
+          close.focus();
+          return;
+        } catch {
+          nativeView.remove();
+        }
+      }
       const parsed = new DOMParser().parseFromString(raw, "text/html");
       parsed.querySelectorAll("script, meta, base, link, iframe, frame, object, embed").forEach((node) => node.remove());
       parsed.querySelectorAll("a, area").forEach((node) => {
@@ -1040,14 +1077,6 @@ function setup(ctx) {
       }
       themeObserver.observe(document.head, { subtree: true, childList: true, characterData: true, attributes: true });
       systemTheme.addEventListener("change", refreshTheme);
-      const details = el("details");
-      const summary = el("summary");
-      summary.textContent = "Exact source";
-      const source = el("pre", "stitch-preview-source");
-      source.textContent = raw;
-      details.append(summary, source);
-      const close = textButton("Close preview");
-      close.addEventListener("click", () => previewModal.dismiss());
       previewModal.root.append(explanation, frame, details, close);
       previewModal.onDismiss(() => {
         themeObserver.disconnect();
@@ -1179,7 +1208,7 @@ function setup(ctx) {
         };
         island.addEventListener("click", toggleIsland);
         const view = iconButton(`Preview ${label.textContent} ${blockIndex + 1} from Swipe ${session.currentSwipe + 1}`, eyeIcon());
-        view.addEventListener("click", () => previewPiece(raw.slice(block.start, block.end), label.textContent, block.kind === "resolved-island", view));
+        view.addEventListener("click", () => previewPiece(raw.slice(block.start, block.end), label.textContent, block.kind === "resolved-island", view, { swipeIndex: session.currentSwipe, start: block.start, end: block.end }));
         row.append(island, view);
         source.appendChild(row);
       }
@@ -1287,8 +1316,30 @@ function setup(ctx) {
       const head = stageHeader("Arrange", "Drag the pieces into the final order");
       const count = el("span", "stitch-count");
       count.textContent = `${session.fragments.length} piece${session.fragments.length === 1 ? "" : "s"}`;
-      head.appendChild(count);
+      const tools = el("div", "stitch-arrange-tools");
+      const expandAll = textButton("Expand all");
+      expandAll.classList.add("stitch-read-more");
+      tools.append(count, expandAll);
+      head.appendChild(tools);
       const list = el("div", "stitch-arrange-list");
+      list.id = uniqueId();
+      expandAll.setAttribute("aria-controls", list.id);
+      const expansionUpdates = [];
+      const allExpanded = () => session.fragments.every((fragment) => expandedPieces.has(fragment.id));
+      const syncAllAction = () => {
+        expandAll.textContent = allExpanded() ? "Collapse all" : "Expand all";
+      };
+      expandAll.addEventListener("click", () => {
+        const collapse = allExpanded();
+        session.fragments.forEach((fragment) => {
+          if (collapse)
+            expandedPieces.delete(fragment.id);
+          else
+            expandedPieces.add(fragment.id);
+        });
+        expansionUpdates.forEach((update) => update());
+        syncAllAction();
+      });
       const previewObserver = new ResizeObserver((entries) => {
         for (const { target } of entries) {
           target.classList.toggle("is-truncated", !target.classList.contains("is-expanded") && target.scrollHeight > target.clientHeight + 1);
@@ -1401,11 +1452,7 @@ function setup(ctx) {
         expand.setAttribute("aria-label", `${expandedPieces.has(fragment.id) ? "Show less of" : "Read more of"} piece ${index + 1}`);
         expand.setAttribute("aria-expanded", String(expandedPieces.has(fragment.id)));
         expand.setAttribute("aria-controls", preview.id);
-        expand.addEventListener("click", () => {
-          if (expandedPieces.has(fragment.id))
-            expandedPieces.delete(fragment.id);
-          else
-            expandedPieces.add(fragment.id);
+        const updateExpansion = () => {
           preview.classList.toggle("is-expanded", expandedPieces.has(fragment.id));
           if (expandedPieces.has(fragment.id))
             preview.classList.remove("is-truncated");
@@ -1413,9 +1460,18 @@ function setup(ctx) {
           expand.textContent = expandedPieces.has(fragment.id) ? "Show less" : "Read more";
           expand.setAttribute("aria-expanded", String(expandedPieces.has(fragment.id)));
           expand.setAttribute("aria-label", `${expandedPieces.has(fragment.id) ? "Show less of" : "Read more of"} piece ${index + 1}`);
+        };
+        expansionUpdates.push(updateExpansion);
+        expand.addEventListener("click", () => {
+          if (expandedPieces.has(fragment.id))
+            expandedPieces.delete(fragment.id);
+          else
+            expandedPieces.add(fragment.id);
+          updateExpansion();
+          syncAllAction();
         });
         const view = iconButton(`Preview piece ${index + 1}`, eyeIcon());
-        view.addEventListener("click", () => previewPiece(fragment.text, `Piece ${index + 1}`, fragment.sourceKind === "resolved-island", view));
+        view.addEventListener("click", () => previewPiece(fragment.text, `Piece ${index + 1}`, fragment.sourceKind === "resolved-island", view, { swipeIndex: fragment.swipeIndex, start: fragment.start, end: fragment.end }));
         const up = iconButton(`Move piece ${index + 1} up`, chevronIcon("up"));
         up.disabled = index === 0;
         up.addEventListener("click", () => {
@@ -1474,6 +1530,7 @@ function setup(ctx) {
         card.append(handle, copy, actions);
         list.appendChild(card);
       });
+      syncAllAction();
       stage.append(head, list);
     };
     const renderEdit = (stage) => {

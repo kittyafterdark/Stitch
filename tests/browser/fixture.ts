@@ -10,6 +10,7 @@ let subscription: (state: any) => void = () => {}
 let active = { chatId: 'fixture-chat' as string | null }
 const dialogs = new Set<{ dismiss: () => void }>()
 const requests: any[] = []
+let nativePreview = false
 const modal = (options: any) => {
   const backdrop = document.createElement('div')
   backdrop.className = 'fixture-backdrop'
@@ -47,6 +48,14 @@ const modal = (options: any) => {
   return handle
 }
 const ctx = {
+  components: {
+    listHostSurfaces() { return nativePreview ? [{ id: 'message_preview' }] : [] },
+    mountHostSurface(target: HTMLElement, id: string, props: any) {
+      requests.push({ type: 'native_preview_mount', id, ...props })
+      target.textContent = 'Native island display'
+      return { destroy() { requests.push({ type: 'native_preview_destroy' }); target.replaceChildren() } }
+    },
+  },
   dom: {
     createSandboxFrame(options: any) {
       const element = document.createElement('iframe')
@@ -101,6 +110,7 @@ let dispose = setup(ctx)
 Object.assign(window, {
   fixture: {
     requests, swipes,
+    enableNativePreview() { nativePreview = true },
     unload() { dispose?.() },
     remount() { dispose?.(); active = { chatId: 'fixture-chat' }; dispose = setup(ctx) },
     navigate() { active = { chatId: null }; subscription(active) },

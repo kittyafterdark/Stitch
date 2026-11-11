@@ -629,8 +629,8 @@ function islandPreview(raw: string, block: SelectableSourceBlock): string {
   }
 }
 
-function uniqueId(): string {
-  if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID()
+function uniqueId(ctx: FrontendContext): string {
+  if (ctx.uuid) return ctx.uuid.v4()
   return `stitch-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
@@ -690,7 +690,7 @@ export function setup(ctx: FrontendContext) {
   }
 
   const rpc = (type: string, payload: AnyRecord, timeoutMs = 15000): Promise<AnyRecord> => {
-    const requestId = uniqueId()
+    const requestId = uniqueId(ctx)
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         pending.delete(requestId)
@@ -1064,7 +1064,7 @@ export function setup(ctx: FrontendContext) {
         return
       }
       session.fragments.push({
-        id: uniqueId(),
+        id: uniqueId(ctx),
         swipeIndex: session.currentSwipe,
         start: safeStart,
         end: safeEnd,
@@ -1166,7 +1166,7 @@ export function setup(ctx: FrontendContext) {
       head.appendChild(tools)
 
       const list = el('div', 'stitch-arrange-list')
-      list.id = uniqueId()
+      list.id = uniqueId(ctx)
       expandAll.setAttribute('aria-controls', list.id)
       const expansionUpdates: Array<() => void> = []
       const allExpanded = () => session.fragments.every((fragment) => expandedPieces.has(fragment.id))
@@ -1378,7 +1378,7 @@ export function setup(ctx: FrontendContext) {
       expand.addEventListener('click', async () => {
         expand.disabled = true
         editor.readOnly = true
-        const requestId = uniqueId()
+        const requestId = uniqueId(ctx)
         editorRequestId = requestId
         try {
           const result = await rpc('stitch_edit', { value: session.draft, editorRequestId: requestId }, 60 * 60 * 1000)

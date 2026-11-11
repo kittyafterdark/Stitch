@@ -842,9 +842,9 @@ function islandPreview(raw, block) {
     return "Styled HTML content";
   }
 }
-function uniqueId() {
-  if (typeof crypto?.randomUUID === "function")
-    return crypto.randomUUID();
+function uniqueId(ctx) {
+  if (ctx.uuid)
+    return ctx.uuid.v4();
   return `stitch-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 function setup(ctx) {
@@ -889,7 +889,7 @@ function setup(ctx) {
     }
   };
   const rpc = (type, payload, timeoutMs = 15000) => {
-    const requestId = uniqueId();
+    const requestId = uniqueId(ctx);
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         pending.delete(requestId);
@@ -1228,7 +1228,7 @@ function setup(ctx) {
         return;
       }
       session.fragments.push({
-        id: uniqueId(),
+        id: uniqueId(ctx),
         swipeIndex: session.currentSwipe,
         start: safeStart,
         end: safeEnd,
@@ -1322,7 +1322,7 @@ function setup(ctx) {
       tools.append(count, expandAll);
       head.appendChild(tools);
       const list = el("div", "stitch-arrange-list");
-      list.id = uniqueId();
+      list.id = uniqueId(ctx);
       expandAll.setAttribute("aria-controls", list.id);
       const expansionUpdates = [];
       const allExpanded = () => session.fragments.every((fragment) => expandedPieces.has(fragment.id));
@@ -1556,7 +1556,7 @@ function setup(ctx) {
       expand.addEventListener("click", async () => {
         expand.disabled = true;
         editor.readOnly = true;
-        const requestId = uniqueId();
+        const requestId = uniqueId(ctx);
         editorRequestId = requestId;
         try {
           const result = await rpc("stitch_edit", { value: session.draft, editorRequestId: requestId }, 60 * 60 * 1000);

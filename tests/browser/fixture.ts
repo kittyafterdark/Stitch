@@ -47,7 +47,9 @@ const modal = (options: any) => {
   dialogs.add(handle)
   return handle
 }
+let nextUuid = 0
 const ctx = {
+  uuid: { v4: () => '00000000-0000-4000-8000-' + (++nextUuid).toString(16).padStart(12, '0') },
   components: {
     listHostSurfaces() { return nativePreview ? [{ id: 'message_preview' }] : [] },
     mountHostSurface(target: HTMLElement, id: string, props: any) {

@@ -43,6 +43,7 @@ try {
         await page.goto(url)
         await page.getByRole('button', { name: 'Stitch swipes', exact: true }).click()
         const source = page.getByRole('region', { name: 'Swipe 1 selectable source' })
+        assert.equal(await page.evaluate(() => window.fixture.requests.find(request => request.type === 'stitch_open').requestId), '00000000-0000-4000-8000-000000000001')
         const paragraphs = source.locator('p')
         assert.equal(await source.getByRole('button', { name: /^Preview paragraph/ }).count(), 0, 'Prose has no eye buttons')
         assert.equal(await paragraphs.first().evaluate(e => getComputedStyle(e).userSelect || getComputedStyle(e).webkitUserSelect), 'text')
